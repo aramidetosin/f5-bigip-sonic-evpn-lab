@@ -1,6 +1,6 @@
 # Part 23: CIS in cluster mode: pods as pool members, TLS and WAF from Kubernetes
 
-**Coming.** Planned for 2026-12-29 04:00 UTC. This guide is published here with the part: every command in order, how to verify and how to reset, as for parts 1-18.
+**Coming.** Planned for 2026-12-29 04:00 UTC. This guide is published here with the part: every command in order, how to verify and how to reset, as for parts 1-19.
 
 | | |
 |---|---|

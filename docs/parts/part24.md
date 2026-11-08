@@ -1,6 +1,6 @@
 # Part 24: The BIG-IP as the front door of an AI inference fabric
 
-**Coming.** Planned for 2026-12-31 04:00 UTC. This guide is published here with the part: every command in order, how to verify and how to reset, as for parts 1-18.
+**Coming.** Planned for 2026-12-31 04:00 UTC. This guide is published here with the part: every command in order, how to verify and how to reset, as for parts 1-19.
 
 | | |
 |---|---|

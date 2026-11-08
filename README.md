@@ -63,7 +63,7 @@ Videos and written walkthroughs are published at 04:00 UTC on the date shown. Ea
 | 16 | [Advanced WAF: protecting the app, from attack to false positive](docs/parts/part16.md) | 2026-12-12 |
 | 17 | [Advanced WAF for APIs: a policy from the OpenAPI contract](docs/parts/part17.md) | 2026-12-15 |
 | 18 | [GSLB with BIG-IP DNS: wide IPs, pools and the resolver](docs/parts/part18.md) | 2026-12-17 |
-| 19 | [GSLB failover between two sites, timed](docs/parts/part19.md) | coming |
+| 19 | [GSLB failover between two sites, timed](docs/parts/part19.md) | 2026-12-19 |
 | 20 | [Anycast VIPs with route health injection: one address, two sites, active-active](docs/parts/part20.md) | coming |
 | 21 | [AS3: declaring BIG-IP configuration as code](docs/parts/part21.md) | coming |
 | 22 | [Kubernetes services through the BIG-IP with F5 CIS](docs/parts/part22.md) | coming |
