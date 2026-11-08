@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Video | [F5 Anycast VIP with RHI: One Address, Two Sites (Part 20)](https://youtu.be/7N8q_b9P48M) (public from 2026-12-22 04:00 UTC) |
+| Video | [F5 Anycast VIP with RHI: One Address, Two Sites (Part 20)](https://youtu.be/c1k7-eQ8zmY) (public from 2026-12-22 04:00 UTC) |
 | Written walkthrough | [levelupit.xyz](https://www.levelupit.xyz/learning-f5-big-ip-on-a-sonic-data-centre-fabric-anycast-rhi/) (from 2026-12-22 04:00 UTC) |
 | Previous / next | [Part 19](part19.md) / [Part 21](part21.md) |
 
@@ -25,7 +25,7 @@ twice.
 - The end state of part 19: lb-f5a (site A, `pool-rhi` with monitor `mon-rhi`, `vs-rhi`) and lb-f5b (site B, `pool-siteb`,
   `vs-siteb`), standalone, both with BGP to leaf1a and leaf1b (part 14), both AS 65020. The GSLB configuration of parts 18-19 stays
   and is not used here.
-- The leaves' multipath hash at its default, `net.ipv4.fib_multipath_hash_policy = 0` (L3). Step 5 changes it.
+- The leaves' multipath hash at its default, `net.ipv4.fib_multipath_hash_policy = 0` (L3). Step 7 changes it.
 - Units used: both. To get here: the guide of part 19, or restore the UCS you saved at its end with `./f5-restore.sh`. Save both units
   before you start (`./f5-save.sh`).
 
@@ -80,23 +80,108 @@ for l in leaf1a leaf1b; do $l 'sudo sysctl net.ipv4.fib_multipath_hash_policy'; 
 You should see each site's /32s through its own BIG-IP (.3 = lb-f5a, .4 = lb-f5b); both BIG-IPs as AS 65020 with BFD and
 `maximum-paths 8`; and hash policy 0 on both leaves.
 
-### 2. One address on both sites
+### 2. Site A: the virtual server, then the advertisement
 
-Each site gets a virtual server on 10.20.5.200 with its own pool and SNAT automap, and the virtual address with route advertisement.
-The two files differ only in the pool:
+Site A's pool from part 14, which the new virtual server will use:
 
 ```bash
-cat anycast/any-a.conf
-diff anycast/any-a.conf anycast/any-b.conf
-F5U=lb-f5a f5merge anycast/any-a.conf && F5U=lb-f5b f5merge anycast/any-b.conf
+f5 'tmsh list ltm pool pool-rhi monitor members' | grep -E 'pool|monitor|address'
+```
+
+You should see `pool-rhi` with server1-3 and monitor `mon-rhi`.
+
+The virtual server on the anycast address. `destination` is the address and port it listens on; `pool` is where it sends the
+connections (site A's own servers); the `tcp` and `http` profiles make it a full proxy for HTTP; SNAT automap translates the client's
+address to lb-f5a's own address, so the servers' replies come back through site A:
+
+```bash
+f5 'tmsh create ltm virtual vs-any destination 10.20.5.200:80 ip-protocol tcp pool pool-rhi profiles add { tcp http } source-address-translation { type automap }'
+```
+
+Creating the virtual server also created its virtual address, 10.20.5.200. Look at both, and at leaf1a:
+
+```bash
+f5 'tmsh list ltm virtual vs-any; tmsh list ltm virtual-address 10.20.5.200 route-advertisement'
+leaf1a "vtysh -c 'show ip route vrf Vrf-App 10.20.5.200'" | grep -E 'Known|via' || echo 'leaf1a: no route to 10.20.5.200'
+```
+
+You should see `route-advertisement disabled` (the default for a new virtual address) and no route to 10.20.5.200 on leaf1a: the
+address exists on lb-f5a, but nothing tells the fabric.
+
+`route-advertisement any` is route health injection: the BIG-IP puts the /32 into its routing table while the virtual address is
+available (any one of its virtual servers available), and removes it when it is not. Turn it on, and check leaf1a 10 s later:
+
+```bash
+f5 'tmsh modify ltm virtual-address 10.20.5.200 route-advertisement any; tmsh list ltm virtual-address 10.20.5.200 route-advertisement'
+sleep 10; leaf1a "vtysh -c 'show ip route vrf Vrf-App 10.20.5.200'" | grep -E 'Known|via|not in'
+```
+
+You should see 10.20.5.200 via 10.254.5.3 (lb-f5a, site A) only.
+
+### 3. How the advertisement reaches BGP
+
+The BGP side was built in part 14; nothing in it changes here. On lb-f5a, in the routing module (`imish`, route domain 0): the
+injected /32 is a kernel route owned by TMM:
+
+```bash
+f5 "imish -r 0 -e 'show ip route kernel' | grep 10.20.5.200"
+```
+
+You should see 10.20.5.200/32 as "directly connected, tmm".
+
+BGP redistributes kernel routes through a route map, peers with both leaves with BFD, and accepts nothing from them:
+
+```bash
+f5 "imish -r 0 -e 'show running-config' | grep -A14 '^router bgp'"
+```
+
+You should see `router bgp 65020` with `redistribute kernel route-map VIPS`, both leaves (10.254.5.1, 10.254.7.1) as neighbours with
+`fall-over bfd` (a lost leaf or BIG-IP is detected by BFD, not by the BGP hold timer) and `route-map ACCEPT-NONE in` (the BIG-IP
+advertises, it does not learn routes from the fabric).
+
+The route map lets out only /32s from 10.20.5.0/24:
+
+```bash
+f5 "imish -r 0 -e 'show running-config' | grep -E '^(ip prefix-list|route-map)| match'"
+```
+
+You should see `ip prefix-list VIPS seq 10 permit 10.20.5.0/24 ge 32` and `route-map VIPS permit 10` with
+`match ip address prefix-list VIPS`. That is why the new address needed no routing change: 10.20.5.200/32 already matches.
+
+What lb-f5a now advertises to leaf1a:
+
+```bash
+f5 "imish -r 0 -e 'show ip bgp neighbors 10.254.5.1 advertised-routes' | grep -E 'Network|10.20.5'"
+```
+
+In my run: 10.20.5.10, 10.20.5.53 and now 10.20.5.200.
+
+### 4. Site B: the same address, its own pool
+
+Site B's pool:
+
+```bash
+f5b 'tmsh list ltm pool pool-siteb monitor members' | grep -E 'pool|monitor|address'
+```
+
+You should see `pool-siteb` with server1-3 and monitor `http-app`.
+
+The same virtual server on lb-f5b, with site B's pool, and route advertisement on its virtual address:
+
+```bash
+f5b 'tmsh create ltm virtual vs-any destination 10.20.5.200:80 ip-protocol tcp pool pool-siteb profiles add { tcp http } source-address-translation { type automap }; tmsh modify ltm virtual-address 10.20.5.200 route-advertisement any'
+f5b 'tmsh list ltm virtual vs-any; tmsh list ltm virtual-address 10.20.5.200 route-advertisement'
 sleep 10; for l in leaf1a leaf1b; do echo "== $l"; $l "vtysh -c 'show ip route vrf Vrf-App 10.20.5.200'" | grep -E 'Known|via'; done
 pc1 'getent hosts any.f5lab.test'
 ```
 
-You should see two next hops to 10.20.5.200 on each leaf (10.254.5.3 and 10.254.5.4), and pc1 resolving `any.f5lab.test` to
-10.20.5.200 from `/etc/hosts`.
+You should see two next hops to 10.20.5.200 on each leaf (10.254.5.3 = site A, 10.254.5.4 = site B), and pc1 resolving
+`any.f5lab.test` to 10.20.5.200 from `/etc/hosts`.
 
-### 3. The same route, from inside
+The same configuration as files, as an alternative to steps 2 and 4: `demo/anycast/any-a.conf` and `demo/anycast/any-b.conf` (they
+differ only in the pool), merged with `F5U=lb-f5a f5merge anycast/any-a.conf && F5U=lb-f5b f5merge anycast/any-b.conf`.
+
+### 5. The same route, from inside
 
 leaf1a's BGP paths, the route in the kernel with its next-hop group, and lb-f5b's own BGP entry:
 
@@ -110,7 +195,7 @@ In my run: four BGP paths on leaf1a, the two from the BIG-IPs (AS 65020) marked 
 longer AS path. In the kernel: one route with a next-hop group of two, of the plain kind (no `type resilient`). On lb-f5b:
 10.20.5.200/32 local, advertised to both leaves.
 
-### 4. Who lands where: the L3 hash
+### 6. Who lands where: the L3 hash
 
 ```bash
 for p in pc1 pc2 pc3; do ./any-count.sh $p 10; done
@@ -122,7 +207,7 @@ In my run: pc1, pc2 and pc3 all landed on site A, 10 of 10 each. leaf1a's own an
 10.10.0.22, .23 and .25-.27 > site B. The leaves forward in the VM's Linux kernel; with policy 0 the hash uses only the addresses, so
 every connection from one PC takes the same path. leaf1b would send pc3 to site B, but the PCs' traffic enters the fabric at leaf1a.
 
-### 5. The 5-tuple hash
+### 7. The 5-tuple hash
 
 This is a live, non-persistent change on the leaves: `sysctl -w` sets the kernel value until the leaf restarts, and nothing writes it to
 the leaves' saved configuration.
@@ -135,7 +220,7 @@ for p in pc1 pc2 pc3; do ./any-count.sh $p 20; done
 In my run, 20 fetches each (site A / site B): pc1 8/12, pc2 6/14, pc3 13/7, none failed. In the dry run: pc1 17/19. Each new
 connection has a new source port, so it is hashed again.
 
-### 6. Site A's application fails
+### 8. Site A's application fails
 
 Site A loses its servers (blackhole routes on server1-3, as in part 19) 6 s into a 45 s watch:
 
@@ -148,7 +233,7 @@ In my run: fetches hashed to site A failed, those to site B kept working: 24 fai
 down at +17.3 to +20.3 s and `vs-any` unavailable at +20.3 s; leaf1a had site B only from +27.0 s. Route health injection withdrew the
 /32 once the virtual server was unavailable. As with GSLB, the monitor's timeout is the largest share; unlike GSLB, nothing is cached.
 
-### 7. Repair
+### 9. Repair
 
 ```bash
 ( (sleep 4; ./site-a.sh app-ok) & ); ./any-watch.sh 25 /tmp/ar.log
@@ -157,7 +242,7 @@ clear; ./any-timeline.sh /tmp/ar.log
 
 In my run: `vs-any` available at +0.3 s; leaf1a had site A and site B again at +10.9 s; no failed fetch.
 
-### 8. Site A disappears
+### 10. Site A disappears
 
 All of lb-f5a's data interfaces down, then back:
 
@@ -171,7 +256,7 @@ In my run: 1 failed fetch (+0.8 s); leaf1a had site B only at +1.3 s (dry run: +
 BFD on these sessions. LTM on lb-f5a noticed only at +16 to +21 s: site A was still running, it simply could not reach anything. After
 `connect`: two next hops again after 14 s.
 
-### 9. Open connections
+### 11. Open connections
 
 Each site has its own connection table, so a flow the fabric moves to the other site is answered with a reset. Eight keep-alive
 connections from pc1 for 85 s; site A isolated 15 s in and reconnected 25 s later:
@@ -186,7 +271,7 @@ the four on site B carried on. When site A came back (about 14 s after its links
 after its first break) was reset: the next-hop group changed, and the plain (non-resilient) group rehashed it onto site A. Summary: 5
 broken connections, 4 on site A when it left, 1 on site B when it came back.
 
-### 10. Taking a site out, attempt 1: disable the virtual server
+### 12. Taking a site out, attempt 1: disable the virtual server
 
 `vs-any` disabled on lb-f5a 10 s in, with 8 keep-alive connections open and the watch running:
 
@@ -203,7 +288,7 @@ virtual address stayed available and enabled, and BGP still advertised 10.20.5.2
 injection follows the virtual address's availability, not the virtual server's enabled state: new connections hashed to site A were
 refused while the open ones kept working.
 
-### 11. Taking a site out, attempt 2: stop advertising
+### 13. Taking a site out, attempt 2: stop advertising
 
 The virtual address's route advertisement disabled on lb-f5a 10 s in, and set back to `any` 30 s later:
 
@@ -294,8 +379,9 @@ If a run was interrupted, repair site A first: `./site-a.sh app-ok`, `./site-a.s
 ## Files used
 
 - `demo/f5fn.sh`: the helpers `f5`, `f5b`, `pc1`, `leaf1a`, `leaf1b`, `f5merge`.
-- `demo/anycast/any-a.conf`: site A's `vs-any` (pool-rhi) and the virtual address with route advertisement.
-- `demo/anycast/any-b.conf`: the same for site B (pool-siteb).
+- `demo/bgp/lb-f5a.conf`, `demo/bgp/lb-f5b.conf`, `demo/bgp/accept-none.conf`: the BGP configuration from part 14 that step 3 reads.
+- `demo/anycast/any-a.conf`: site A's `vs-any` (pool-rhi) and the virtual address with route advertisement, as a file (alternative to step 2).
+- `demo/anycast/any-b.conf`: the same for site B (pool-siteb; alternative to step 4).
 - `demo/any-count.sh`: n fetches from a PC, counted by site.
 - `demo/any-hash.sh`: a leaf's next-hop choice per source address.
 - `demo/any-watch.sh`: pc1's fetches and leaf1a's next hops, about four times a second.
