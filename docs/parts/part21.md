@@ -1,6 +1,6 @@
 # Part 21: AS3: declaring BIG-IP configuration as code
 
-**Coming.** Planned for 2026-12-24 04:00 UTC. This guide is published here with the part: every command in order, how to verify and how to reset, as for parts 1-19.
+**Coming.** Planned for 2026-12-24 04:00 UTC. This guide is published here with the part: every command in order, how to verify and how to reset, as for parts 1-20.
 
 | | |
 |---|---|

@@ -16,3 +16,4 @@ shared/whoami-colors.txt
 shared/api-values.sh
 shared/gslb-values.sh
 shared/openapi-f5lab-api*.json
+shared/anycast-values.sh
