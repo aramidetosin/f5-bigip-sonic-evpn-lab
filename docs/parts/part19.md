@@ -1,6 +1,6 @@
 # Part 19: GSLB failover between two sites, timed
 
-**Coming.** Planned for 2026-12-19 04:00 UTC. This guide is published here with the part: every command in order, how to verify and how to reset, as for parts 1-17.
+**Coming.** Planned for 2026-12-19 04:00 UTC. This guide is published here with the part: every command in order, how to verify and how to reset, as for parts 1-18.
 
 | | |
 |---|---|

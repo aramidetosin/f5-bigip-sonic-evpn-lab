@@ -32,8 +32,8 @@ srvlog() { for s in server1 server2 server3; do docker exec clab-f5-clos-dc-$s t
 #   srvcount <text>       how many requests containing <text> server1-3 have logged in total (before / after: did it reach the pool?)
 srvcount() { local n=0 c; for s in server1 server2 server3; do c=$(docker exec clab-f5-clos-dc-$s grep -cF "$1" /var/log/nginx/access.log); n=$((n + c)); done; echo "requests containing '$1' logged by server1-3: $n"; }
 # part 17
-#   f5merge <file.conf>   merges a tmsh config file into lb-f5a (tmsh load sys config merge), like irule but for any objects
-f5merge() { ssh $LBA "cat > /var/tmp/merge.conf && tmsh load sys config merge file /var/tmp/merge.conf >/dev/null; rc=\$?; rm -f /var/tmp/merge.conf; [ \$rc = 0 ] && echo merged $(basename "$1")" < "$1"; }
+#   f5merge <file.conf>   merges a tmsh config file into lb-f5a, or $F5U (tmsh load sys config merge), like irule but for any objects
+f5merge() { ssh admin@clab-f5-clos-dc-${F5U:-lb-f5a} "cat > /var/tmp/merge.conf && tmsh load sys config merge file /var/tmp/merge.conf >/dev/null; rc=\$?; rm -f /var/tmp/merge.conf; [ \$rc = 0 ] && echo merged $(basename "$1")" < "$1"; }
 #   wafimport <policy.json>   copies a declarative WAF policy file to lb-f5a (or $WAFU) and imports it (waf-rest.sh import)
 #   oapiserve [s]         serves lab/shared over HTTP on the lab server's management address (172.21.32.1:8099) for s seconds,
 #                         so a BIG-IP can fetch the OpenAPI file a declarative policy links to

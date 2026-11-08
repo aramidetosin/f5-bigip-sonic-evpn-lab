@@ -1,6 +1,6 @@
-# Part 22: CIS in cluster mode: pods as pool members, TLS and WAF from Kubernetes
+# Part 22: Kubernetes services through the BIG-IP with F5 CIS
 
-**Coming.** Planned for 2026-12-26 04:00 UTC. This guide is published here with the part: every command in order, how to verify and how to reset, as for parts 1-17.
+**Coming.** Planned for 2026-12-26 04:00 UTC. This guide is published here with the part: every command in order, how to verify and how to reset, as for parts 1-18.
 
 | | |
 |---|---|
@@ -9,4 +9,4 @@
 
 ## What this part covers
 
-Cluster mode with pod IPs as pool members and static routes to each node's pod network, plus TLS and a WAF policy attached from Kubernetes custom resources.
+A small Kubernetes cluster on the server leaves running the whoami app, and F5 Container Ingress Services exposing it through the BIG-IP, first with NodePort pool members.
