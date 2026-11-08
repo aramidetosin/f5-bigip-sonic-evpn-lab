@@ -9,6 +9,7 @@ COLOR=${COLOR:-#495057}; CNAME=${CNAME:-gray}
 mkdir -p /www/static
 echo OK > /www/health
 echo "static object served by $H" > /www/static/object.txt
+head -c 4194304 /dev/zero > /www/static/large.bin       # 4 MiB: long transfers for least-connections tests (part 5)
 TLS=""
 if [ -r /run/f5lab/tls/$CERT.crt ] && [ -r /run/f5lab/tls/$CERT.key ]; then
   TLS="listen $ADDR:443 ssl; ssl_certificate /run/f5lab/tls/$CERT.crt; ssl_certificate_key /run/f5lab/tls/$CERT.key; ssl_protocols TLSv1.2 TLSv1.3;"
@@ -54,3 +55,4 @@ $LINES
 EOF
 nginx -t -q
 pgrep -x nginx >/dev/null && nginx -s reload || nginx
+[ "$ROLE" = sorry ] || bash /shared/api-up.sh

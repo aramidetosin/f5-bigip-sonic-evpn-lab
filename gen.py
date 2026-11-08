@@ -12,7 +12,7 @@ One cabling and one switch / firewall configuration serve two designs, chosen by
   advanced  1.1 / 1.2 also carry tagged transits (VLAN 3005 / 3007); eBGP from the BIG-IPs to the service leaves, virtual
             server /32s in 10.20.5.0/24 advertised only while their pool is up (route health injection)
 """
-import os
+import json, os
 
 LAB = "f5-clos-dc"
 MGMT = "172.21.32"
@@ -101,6 +101,33 @@ WHOAMI_COLORS = {"server1": ("#1971c2", "blue"), "server2": ("#2f9e44", "green")
 LAN_SWITCH = ("lan-switch", "eth3", "10.10.0.5", 30, 110)
 PCS = {"pc1": ("eth3", "10.10.0.11", 111), "pc2": ("eth4", "10.10.0.12", 112), "pc3": ("eth5", "10.10.0.13", 113)}
 TLS_NAMES = ["app.f5lab.test", "sorry.f5lab.test"] + ["%s.f5lab.test" % s for s in SERVERS]
+API = {"name": "api.f5lab.test", "vip": "10.20.30.101", "port": 8080, "base": "/api/v1",
+       "undocumented": ["/api/v1/admin/users", "DELETE /api/v1/items/{id}"]}
+
+GSLB = {"zone": "gslb.f5lab.test", "wideip": "app.gslb.f5lab.test", "resolver": ("lan-switch", "10.10.0.5"),
+        "sites": {"lb-f5a": ("site-a", "10.20.5.0/25", "10.20.5.10", "10.20.5.53"),
+                  "lb-f5b": ("site-b", "10.20.5.128/25", "10.20.5.140", "10.20.5.153")}}   # unit: (name, range, app VIP, DNS listener)
+
+def openapi(version="1.0.0"):
+    """The API's OpenAPI 3.0.3 description (shared/openapi-f5lab-api.json): the positive-security model for part 17.
+    1.1.0 (shared/openapi-f5lab-api-v1.1.json) adds GET /version: the release that ships before its description is imported."""
+    item = {"type": "object", "additionalProperties": False, "required": ["name", "qty"],
+            "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 40},
+                           "qty": {"type": "integer", "minimum": 1, "maximum": 100}}}
+    ok = lambda d, ref=None: {"description": d, "content": {"application/json": {"schema": {"$ref": ref} if ref else {"type": "object"}}}}
+    idp = {"name": "id", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 1, "maximum": 9999}}
+    return {"openapi": "3.0.3",
+            "info": {"title": "f5lab items API", "version": version, "description": "The part 17 test API on server1-3"},
+            "servers": [{"url": "http://%s%s" % (API["name"], API["base"])}],
+            "paths": {
+                "/health": {"get": {"operationId": "health", "responses": {"200": ok("up")}}},
+                "/items": {"get": {"operationId": "listItems", "responses": {"200": ok("all items")}},
+                           "post": {"operationId": "createItem",
+                                    "requestBody": {"required": True, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Item"}}}},
+                                    "responses": {"201": ok("created")}}},
+                "/items/{id}": {"get": {"operationId": "getItem", "parameters": [idp], "responses": {"200": ok("one item", "#/components/schemas/Item")}}},
+                **({"/version": {"get": {"operationId": "version", "responses": {"200": ok("the API release")}}}} if version >= "1.1" else {})},
+            "components": {"schemas": {"Item": item}}}
 
 
 def eth_to_sonic(port):   # clab ethN -> EthernetN-1 (Dell SONiC native naming)
@@ -201,7 +228,7 @@ def sonic_cli(sw):
             if v == "Vrf-App":
                 f5net = ADVANCED["transit"][sw][0]
                 for unit, u in F5.items():
-                    c += ["neighbor %s.%d" % (f5net, u[5]), "remote-as %d" % ADVANCED["asn"], "timers 3 9", "address-family ipv4 unicast", "activate", "exit", "exit"]
+                    c += ["neighbor %s.%d" % (f5net, u[5]), "remote-as %d" % ADVANCED["asn"], "timers 3 9", "bfd", "address-family ipv4 unicast", "activate", "exit", "exit"]
         c += ["exit"]
     return c + ["end", "write memory"]
 
@@ -239,6 +266,7 @@ def fw_xml():
     vrs = E(FW_VR, "<interface>%s</interface>%s" % (M(*["ae1.%d" % t[0] for t in TRANSITS]), bgp))
     zones = "".join(E(t[3], "<network><layer3>%s</layer3></network>" % M("ae1.%d" % t[0])) for t in TRANSITS)
     svc = E("web", "<protocol><tcp><port>80,443</port></tcp></protocol>")
+    svc += E("dns-udp", "<protocol><udp><port>53</port></udp></protocol>") + E("dns-tcp", "<protocol><tcp><port>53</port></tcp></protocol>")
     addrs = "".join(E("published-%d" % k, "<ip-netmask>%s</ip-netmask>" % p) for k, (p, _x) in enumerate(PUBLISHED)) + \
         E("clients", "<ip-netmask>%s</ip-netmask>" % CLIENTS[0][0])
 
@@ -248,6 +276,7 @@ def fw_xml():
     pub = ["published-%d" % k for k in range(len(PUBLISHED))]
     sec = rule("clients-to-published-web", ["outside"], ["app"], ["clients"], pub, ["any"], ["web"])
     sec += rule("clients-to-published-ping", ["outside"], ["app"], ["clients"], pub, ["ping"], ["application-default"])
+    sec += rule("clients-to-published-dns", ["outside"], ["app"], ["clients"], pub, ["any"], ["dns-udp", "dns-tcp"])
     sec += rule("allow-intrazone", ["any"], ["any"], ["any"], ["any"], ["any"], ["any"], extra="<rule-type>intrazone</rule-type>")
     sec += rule("deny-all-log", ["any"], ["any"], ["any"], ["any"], ["any"], ["any"], "deny", "<rule-type>interzone</rule-type>")
     allif = ["ae1.%d" % t[0] for t in TRANSITS]
@@ -349,6 +378,14 @@ if __name__ == "__main__":
         open("configs/%s.cli" % sw, "w").write("\n".join(sonic_cli(sw)) + "\n")
     open("bootstrap/fw-pa.xml", "w").write(fw_xml())
     open("shared/whoami-colors.txt", "w").write("".join("%s %s %s\n" % (n, c, w) for n, (c, w) in WHOAMI_COLORS.items()))
+    open("shared/gslb-values.sh", "w").write("# generated by gen.py (GSLB): parts 18-19\nGSLB_ZONE=%s\nGSLB_WIDEIP=%s\nRESOLVER_HOST=%s\nRESOLVER_IP=%s\n"
+        % (GSLB["zone"], GSLB["wideip"], GSLB["resolver"][0], GSLB["resolver"][1])
+        + "".join("SITE_%s=\"%s %s %s %s\"\n" % (u.replace("-", "_").upper(), *v) for u, v in GSLB["sites"].items())
+        + "GSLB_LISTENERS=\"%s\"\n" % " ".join(v[3] for v in GSLB["sites"].values()))
+    open("shared/api-values.sh", "w").write("# generated by gen.py (API): part 17's test API\nAPI_NAME=%s\nAPI_VIP=%s\nAPI_PORT=%d\nAPI_BASE=%s\n"
+                                         % (API["name"], API["vip"], API["port"], API["base"]))
+    open("shared/openapi-f5lab-api.json", "w").write(json.dumps(openapi(), indent=2) + "\n")
+    open("shared/openapi-f5lab-api-v1.1.json", "w").write(json.dumps(openapi("1.1.0"), indent=2) + "\n")
     open("images.txt", "w").write("".join("%s %s\n" % kv for kv in BUILD_IMAGES.items()))
     print("gen.py: %d switches, %d links, %d hosts, %d switch configs, fw-pa.xml" % (len(SPINES + LEAVES), len(links()),
           len(APP_HOSTS) + 1 + len(PCS), len(SPINES + LEAVES)))

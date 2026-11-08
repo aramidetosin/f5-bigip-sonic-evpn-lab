@@ -8,8 +8,10 @@ ip link set eth1 mtu 9000; ip link set eth1 up; ip addr replace $IP dev eth1
 ip route replace default via $GW dev eth1
 # names for the course tests (docker owns /etc/hosts: rewrite it in place, without an older block of ours)
 h=$(awk '/^# f5lab BEGIN/ {s=1} !s; /^# f5lab END/ {s=0}' /etc/hosts); printf '%s\n' "$h" > /etc/hosts
-{ echo "# f5lab BEGIN"; echo "10.20.30.100 app.f5lab.test"; echo "10.20.30.30 sorry.f5lab.test"
+. /shared/api-values.sh
+{ echo "# f5lab BEGIN"; echo "10.20.30.100 app.f5lab.test"; echo "10.20.30.30 sorry.f5lab.test"; echo "$API_VIP $API_NAME"
   echo "10.20.0.11 server1.f5lab.test"; echo "10.20.0.12 server2.f5lab.test"; echo "10.20.0.13 server3.f5lab.test"; echo "# f5lab END"; } >> /etc/hosts
+. /shared/gslb-values.sh; printf 'nameserver %s\noptions timeout:2 attempts:1\n' "$RESOLVER_IP" > /etc/resolv.conf
 # the lab CA for the system (curl, wget) and for Firefox (enterprise policy)
 if [ -s /run/f5lab/ca.crt ]; then cp /run/f5lab/ca.crt /usr/local/share/ca-certificates/f5lab-ca.crt; update-ca-certificates >/dev/null 2>&1 || true; fi
 mkdir -p /etc/firefox/policies

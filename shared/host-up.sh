@@ -31,3 +31,4 @@ fi
 ssh-keygen -A >/dev/null
 sed -i -e 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' -e 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
 pgrep -x sshd >/dev/null || /usr/sbin/sshd
+. /shared/gslb-values.sh; [ "$(hostname)" = "$RESOLVER_HOST" ] && bash /shared/resolver-up.sh || true

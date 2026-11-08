@@ -1,0 +1,16 @@
+{
+  "policy": {
+    "name": "waf-api",
+    "description": "part 17: positive security from the OpenAPI file (release 1.1)",
+    "template": {
+      "name": "POLICY_TEMPLATE_API_SECURITY"
+    },
+    "enforcementMode": "blocking",
+    "applicationLanguage": "utf-8",
+    "open-api-files": [
+      {
+        "link": "http://172.21.32.1:8099/openapi-f5lab-api-v1.1.json"
+      }
+    ]
+  }
+}
