@@ -1,0 +1,35 @@
+{
+  "class": "AS3",
+  "action": "deploy",
+  "declaration": {
+    "class": "ADC",
+    "schemaVersion": "3.56.0",
+    "id": "f5lab-part21-team-b",
+    "label": "another team's tenant: a pool only",
+    "f5lab_teamb": {
+      "class": "Tenant",
+      "shared": {
+        "class": "Application",
+        "template": "generic",
+        "api_pool": {
+          "class": "Pool",
+          "loadBalancingMode": "round-robin",
+          "monitors": [
+            {
+              "bigip": "/Common/http-app"
+            }
+          ],
+          "members": [
+            {
+              "servicePort": 8080,
+              "serverAddresses": [
+                "10.20.0.11",
+                "10.20.0.12"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}
