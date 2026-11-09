@@ -1,0 +1,54 @@
+# Part 23: whoami version 3 = version 2 + a graceful exit: on termination the pod keeps serving for 15 s (preStop) before nginx stops,
+# long enough for CIS to take it out of the BIG-IP pool first. Version 2 also prints the X-Forwarded-For header the pod receives. Each pod answers with its own name, pod IP and node (downward API), so a request
+# through the BIG-IP shows which pod and which node served it. Image f5lab/web:1 (nginx), preloaded on every node.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: web
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whoami
+  namespace: web
+spec:
+  replicas: 3
+  selector:
+    matchLabels: {app: whoami}
+  template:
+    metadata:
+      labels: {app: whoami, version: v3}
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: web
+          image: f5lab/web:1
+          imagePullPolicy: Never
+          ports: [{containerPort: 80}]
+          env:
+            - {name: POD_NAME, valueFrom: {fieldRef: {fieldPath: metadata.name}}}
+            - {name: POD_IP, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: NODE_NAME, valueFrom: {fieldRef: {fieldPath: spec.nodeName}}}
+          command: [sh, -c]
+          args:
+            - |
+              echo OK > /www/health 2>/dev/null || { mkdir -p /www; echo OK > /www/health; }
+              printf 'server {\n  listen 80;\n  root /www;\n  location = /health { default_type text/plain; }\n  location / { default_type text/plain; return 200 "pod %s %s on %s\\nclient seen: $remote_addr\\nx-forwarded-for: $http_x_forwarded_for\\n"; }\n}\n' "$POD_NAME" "$POD_IP" "$NODE_NAME" > /etc/nginx/http.d/default.conf
+              exec nginx -g 'daemon off;'
+          lifecycle:
+            preStop:
+              exec: {command: [sleep, "15"]}
+          readinessProbe:
+            httpGet: {path: /health, port: 80}
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whoami
+  namespace: web
+spec:
+  type: NodePort
+  selector: {app: whoami}
+  ports:
+    - {name: http, port: 80, targetPort: 80, nodePort: 30080}

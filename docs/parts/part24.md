@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Video | F5 BIG-IP in Front of an AI Inference Fabric on Kubernetes (Part 24), on the [LevelUP I.T. channel](https://www.youtube.com/@levelupit) (public from 2026-12-31 04:00 UTC) |
+| Video | [F5 BIG-IP in Front of an AI Inference Fabric on Kubernetes (Part 24)](https://youtu.be/qrujtDtevKM) (public from 2026-12-31 04:00 UTC) |
 | Written walkthrough | [levelupit.xyz](https://www.levelupit.xyz/learning-f5-big-ip-on-a-sonic-data-centre-fabric-ai-inference/) (from 2026-12-31 04:00 UTC) |
 | Previous / next | [Part 23](part23.md) / this is the last part |
 
