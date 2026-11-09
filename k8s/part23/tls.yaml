@@ -1,0 +1,15 @@
+# Part 23: TLS declared from Kubernetes. The certificate and key live in a Kubernetes TLS Secret (k8s-tls, created from the lab CA's
+# k8s.f5lab.test certificate); CIS sends them to the BIG-IP as a client-SSL profile (reference: secret). Edge termination: TLS ends on
+# the BIG-IP, the pods get plain HTTP.
+apiVersion: cis.f5.com/v1
+kind: TLSProfile
+metadata:
+  name: k8s-tls
+  namespace: web
+  labels: {f5cr: "true"}
+spec:
+  hosts: [k8s.f5lab.test]
+  tls:
+    termination: edge
+    clientSSL: k8s-tls
+    reference: secret

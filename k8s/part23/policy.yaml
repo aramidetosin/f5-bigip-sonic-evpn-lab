@@ -1,0 +1,11 @@
+# Part 23: a CIS Policy: BIG-IP profiles for the VirtualServers that name it. Here the HTTP profile http-xff (part 4), which inserts
+# X-Forwarded-For with the real client address, so the pods see who called even though the BIG-IP source-NATs.
+apiVersion: cis.f5.com/v1
+kind: Policy
+metadata:
+  name: whoami-policy
+  namespace: web
+  labels: {f5cr: "true"}
+spec:
+  profiles:
+    http: /Common/http-xff

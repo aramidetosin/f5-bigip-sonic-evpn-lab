@@ -68,7 +68,7 @@ Videos and written walkthroughs are published at 04:00 UTC on the date shown. Ea
 | 20 | [Anycast VIPs with route health injection: one address, two sites, active-active](docs/parts/part20.md) | 2026-12-22 |
 | 21 | [AS3: declaring BIG-IP configuration as code](docs/parts/part21.md) | 2026-12-24 |
 | 22 | [Kubernetes services through the BIG-IP with F5 CIS](docs/parts/part22.md) | 2026-12-26 |
-| 23 | [CIS in cluster mode: pods as pool members, TLS and WAF from Kubernetes](docs/parts/part23.md) | coming |
+| 23 | [CIS in cluster mode: pods as pool members, TLS and WAF from Kubernetes](docs/parts/part23.md) | 2026-12-29 |
 | 24 | [The BIG-IP as the front door of an AI inference fabric](docs/parts/part24.md) | coming |
 
 Videos: [youtube.com/@levelupit](https://www.youtube.com/@levelupit) (playlist "F5 BIG-IP on a SONiC EVPN Fabric"). Written walkthroughs: [levelupit.xyz](https://www.levelupit.xyz/).

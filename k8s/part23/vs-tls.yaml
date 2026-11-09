@@ -1,0 +1,26 @@
+# Part 23: the published application, version 2: HTTPS with the TLSProfile k8s-tls, plain HTTP redirected to HTTPS, the part 16
+# WAF policy /Common/waf-app (blocking), and the Policy whoami-policy (http-xff). Pool members: the pods (CIS in cluster mode).
+apiVersion: cis.f5.com/v1
+kind: VirtualServer
+metadata:
+  name: whoami
+  namespace: web
+  labels: {f5cr: "true"}   # CIS only picks up custom resources with this label
+spec:
+  host: k8s.f5lab.test
+  virtualServerAddress: 10.20.30.120
+  tlsProfileName: k8s-tls
+  httpTraffic: redirect
+  waf: /Common/waf-app
+  policyName: whoami-policy
+  snat: auto
+  pools:
+    - path: /
+      service: whoami
+      servicePort: 80
+      monitor:
+        type: http
+        send: "GET /health HTTP/1.1\r\nHost: k8s.f5lab.test\r\nConnection: close\r\n\r\n"
+        recv: "OK"
+        interval: 5
+        timeout: 16

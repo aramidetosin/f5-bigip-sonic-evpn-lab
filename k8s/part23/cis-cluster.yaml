@@ -1,0 +1,40 @@
+# Part 23: the same CIS controller in CLUSTER mode: the pods themselves are the pool members.
+#   It watches the namespace web for VirtualServer resources (CRD mode) and turns them into an AS3 declaration for the
+#   partition f5lab_k8s on lb-f5a (management address), logging in as the BIG-IP user cis (credentials: the Secret bigip-login).
+#   --pool-member-type=cluster: members = the Service's ready endpoints (pod IP:port), read from Kubernetes.
+#   --static-routing-mode=true: CIS also writes one BIG-IP route per node, <node podCIDR> via <node IP>, so the BIG-IP reaches pods.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-bigip-ctlr
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: k8s-bigip-ctlr}
+  template:
+    metadata:
+      labels: {app: k8s-bigip-ctlr}
+    spec:
+      serviceAccountName: bigip-ctlr
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000}
+      containers:
+        - name: k8s-bigip-ctlr
+          image: f5networks/k8s-bigip-ctlr:2.20.4.1
+          imagePullPolicy: Never
+          command: [/app/bin/k8s-bigip-ctlr]
+          args:
+            - --bigip-url=https://172.21.32.43
+            - --bigip-partition=f5lab_k8s
+            - --credentials-directory=/tmp/creds
+            - --custom-resource-mode=true
+            - --namespace=web
+            - --pool-member-type=cluster
+            - --static-routing-mode=true
+            - --insecure=true
+            - --log-level=INFO
+          volumeMounts:
+            - {name: bigip-creds, mountPath: /tmp/creds, readOnly: true}
+      volumes:
+        - name: bigip-creds
+          secret: {secretName: bigip-login, defaultMode: 0440}
