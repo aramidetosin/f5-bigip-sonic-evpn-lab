@@ -40,7 +40,7 @@ P=/f5lab_k8s/Shared/whoami_80_web_k8s_f5lab_test  # CIS's pool (part 22)
 
 Helpers (from `demo/f5fn.sh`): `f5 '<cmd>'` runs a command on lb-f5a (bash as admin); `pc1 '<cmd>'` runs it on pc1;
 `node <node> <cmd...>` runs a command inside a Kubernetes node (`docker exec`); `kubectl ...` runs kubectl on the control plane
-(`k8s-cp`, admin kubeconfig). Several commands below end with `2>&1 | grep -v api-status` in my recording only to hide a BIG-IP login
+(`k8s-cp`, admin kubeconfig). Several commands below end with `2>&1 | grep -v api-status` in my runs only to hide a BIG-IP login
 banner line; they are left out here.
 
 ## Values used in this part
@@ -348,7 +348,7 @@ f5 'tmsh delete net route /f5lab_k8s/k8s-k8s-w2-10.20.0.33'; echo "$(date +%T) r
 ```
 
 You should see the route gone and the k8s-w2 pod sent via the default route, then its member marked offline by the monitor. CIS put the
-route back by itself, within about 15-25 s in my runs (17 s in the one I recorded), and the member came back. Routes are reconciled;
+route back by itself, within about 15-25 s in my runs (17 s in one of them), and the member came back. Routes are reconciled;
 the pool objects of part 22, step 18 were not (a hand change there lasted until the next post).
 
 ### 17. A node out for maintenance, under load

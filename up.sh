@@ -3,7 +3,7 @@
 # up blank and unlicensed, with only their management interface reachable (SSH + web UI).
 #   0 preflight   root, tools, images (builds the small Linux images from images/), a free management subnet, RAM, gen.py, secrets
 #   1 deploy      containerlab deploy --reconfigure (refused while a BIG-IP of this lab runs: ./down.sh saves its config first)
-#   2 access      mgmt-access.sh: masquerade, optional Tailscale subnet route, local route rule
+#   2 access      mgmt-access.sh: masquerade the management subnet out of the host's LAN interface
 #   3 switches    sonic-apply.sh: configs/<switch>.cli on all 8
 #   4 firewall    pa-load.sh: bootstrap/fw-pa.xml (replace + commit)
 #   5 BIG-IP      wait until both management interfaces answer HTTPS and SSH (nothing is configured on them), then SSH keys

@@ -42,7 +42,7 @@ A=/f5lab_ai/ai/llm_pool      # the front door's pool (step 2)
 Helpers (from `demo/f5fn.sh`): `f5 '<cmd>'` runs a command on lb-f5a (bash as admin); `pc1 '<cmd>'` runs it on pc1; `node <node>
 <cmd...>` runs a command inside a Kubernetes node; `kubectl ...` runs kubectl on the control plane; `aistream <url> [from]` sends one
 streaming request and prints every event line with a timestamp: from pc1 (default, through the BIG-IP), or from a node such as `k8s-cp`
-(straight to a pod). In my recording, `f5` commands end with `2>&1 | grep -v api-status` only to hide a login banner line.
+(straight to a pod). In my runs, `f5` commands end with `2>&1 | grep -v api-status` only to hide a login banner line.
 
 ## Values used in this part
 
@@ -161,7 +161,7 @@ pc1 'grep small /tmp/ai-load.txt; grep -v small /tmp/ai-load.txt | sort -t= -k3 
 `llm-small` is one more pod with `SLOTS=1` and the same `app: llm` label, so the Service, and the pool, include it. The 65 s wait lets it
 warm up. Under least connections it still got 4 of 24 streams, which ran up to 15.6 s against a median of 6.5 s (in the dry run: 5 of
 24 and about 19 s, under both methods). The BIG-IP balances connections; it cannot see that a member is slower per connection. The last
-line lists the small pod's streams and the two slowest of the others. I did not run it in this exact form: the command in my recording
+line lists the small pod's streams and the two slowest of the others. I did not run it in this exact form: the command I first ran
 had a quoting error.
 
 ### 6. Admission control: at most 4 streams per pod

@@ -26,7 +26,7 @@ Contents:
 - Internet access from the host. The management network is masqueraded out of one host interface, so the BIG-IPs can reach F5's
   licence server and the Linux images can be built.
 
-My host is an EVE-NG server used as a plain containerlab host (96 CPUs, 377 GiB RAM). Any Linux machine with the items above works.
+Any Linux machine with the items above works.
 
 **Three appliance images** you build yourself from your own vendor downloads (section 2):
 
@@ -92,7 +92,7 @@ Check two values at the top of `gen.py` before the first build:
 
 | Variable | Default | Set it to |
 |---|---|---|
-| `LAN_IF` | `pnet0` (EVE-NG's LAN bridge) | the host interface that reaches the internet; the management subnet is masqueraded out of it |
+| `LAN_IF` | `pnet0` | the host interface that reaches the internet; the management subnet is masqueraded out of it |
 | `MGMT` | `172.21.32` | a /24 that is free on your host (no Docker network, no route). `up.sh` checks it |
 
 Keep every other value as it is if you want to follow the guides line by line: every address in them comes from `gen.py`.
@@ -145,7 +145,7 @@ It runs these stages and logs the detail to `logs/` (ignored by git):
 | 0 preflight | root, tools, images (builds the four Linux images from `images/`), free management subnet, RAM, `gen.py`, secrets |
 | 1a Kubernetes `/var` | `k8s-seed.sh`: a fresh `/var` for each Kubernetes node in a host directory (`/var/lib/f5lab-k8s/<node>`), copied from the kindest/node image (containerd's snapshots fail on the container's own overlay root) |
 | 1 deploy | `containerlab deploy --reconfigure` (refused while a BIG-IP of this lab is running: `./down.sh` first) |
-| 2 access | `mgmt-access.sh`: masquerade the management subnet out of `LAN_IF`; optionally add it to the host's Tailscale routes |
+| 2 access | `mgmt-access.sh`: masquerade the management subnet out of `LAN_IF` |
 | 3 switches | `sonic-apply.sh`: `configs/<switch>.cli` on all eight switches |
 | 4 firewall | `pa-load.sh`: `bootstrap/fw-pa.xml` (import, partial replace, commit) |
 | 4b Kubernetes | `k8s-up.sh`: kubeadm on k8s-cp with `k8s/kubeadm.yaml` (generated), the kindnet CNI, the workers joined with their fabric address as node IP, `f5lab/web:1` and CIS loaded into every node |
@@ -199,11 +199,10 @@ From the lab host, every node answers passwordless SSH as `admin` (`ssh-keys.sh`
 | k8s-cp, k8s-w1, k8s-w2 | .121-.123 | 10.20.0.31-33 | the Kubernetes nodes (part 22 on): `docker exec -it clab-f5-clos-dc-k8s-cp bash`; kubectl on k8s-cp with `--kubeconfig /etc/kubernetes/admin.conf` (`kubectl` in `demo/f5fn.sh`) |
 
 The PCs resolve `app.f5lab.test` (10.20.30.100), `api.f5lab.test` (10.20.30.101, part 17), `any.f5lab.test` (10.20.5.200, part 20),
-`as3.f5lab.test` (10.20.30.110, part 21), `k8s.f5lab.test` (10.20.30.120, part 22) and `sorry.f5lab.test` (10.20.30.30), and trust
+`as3.f5lab.test` (10.20.30.110, part 21), `k8s.f5lab.test` (10.20.30.120, part 22), `ai.f5lab.test` (10.20.30.130, part 24) and `sorry.f5lab.test` (10.20.30.30), and trust
 the lab CA. On the BIG-IP's bash, `ip` is an older version: use `ip addr`, not `ip -br addr`.
 
-To reach the management network from another machine, either route `172.21.32.0/24` via the lab host, or let `mgmt-access.sh`
-advertise it on Tailscale (approve the subnet route once in your Tailscale admin console). The PCs also publish their desktops on the
+To reach the management network from another machine, route `172.21.32.0/24` via the lab host. The PCs also publish their desktops on the
 host's `127.0.0.1:31N0` (http) and `31N1` (https) for SSH or VS Code port forwarding (pc1 = 3110 / 3111).
 
 The test app every server returns (curl gets text, a browser gets a coloured page) shows exactly who answered and what it saw:
