@@ -46,7 +46,7 @@ LOOP_OCTET = dict(zip(SPINES, (1, 2)))
 LOOP_OCTET.update(zip(LEAVES, (11, 12, 21, 22, 31, 32)))
 LOOP = {n: "10.255.255.%d" % o for n, o in LOOP_OCTET.items()}   # Loopback0 = router-id = VTEP
 ANYMAC = "00:00:5e:00:01:01"
-NUM_NICS = 8
+NUM_NICS = 12                            # the busiest switch (server leaves) uses eth1-eth10 since part 22; 2 spare
 LEAF_MEMORY = "6144"
 ES_ACTIVATION_MS = 3000
 
@@ -100,7 +100,7 @@ WHOAMI_COLORS = {"server1": ("#1971c2", "blue"), "server2": ("#2f9e44", "green")
                  "sorry-server": ("#c92a2a", "red")}
 LAN_SWITCH = ("lan-switch", "eth3", "10.10.0.5", 30, 110)
 PCS = {"pc1": ("eth3", "10.10.0.11", 111), "pc2": ("eth4", "10.10.0.12", 112), "pc3": ("eth5", "10.10.0.13", 113)}
-TLS_NAMES = ["app.f5lab.test", "sorry.f5lab.test"] + ["%s.f5lab.test" % s for s in SERVERS]
+TLS_NAMES = ["app.f5lab.test", "sorry.f5lab.test", "k8s.f5lab.test"] + ["%s.f5lab.test" % s for s in SERVERS]
 API = {"name": "api.f5lab.test", "vip": "10.20.30.101", "port": 8080, "base": "/api/v1",
        "undocumented": ["/api/v1/admin/users", "DELETE /api/v1/items/{id}"]}
 
@@ -111,6 +111,18 @@ GSLB = {"zone": "gslb.f5lab.test", "wideip": "app.gslb.f5lab.test", "resolver": 
 ANYCAST = {"name": "any.f5lab.test", "vip": "10.20.5.200"}
 
 AS3 = {"name": "as3.f5lab.test", "vip": "10.20.30.110", "tenant": "f5lab_as3", "version": "3.56.0"}
+
+IMG_K8S = "kindest/node:v1.35.8"
+K8S_NODES = {
+    "k8s-cp": ("eth8", 120, "10.20.0.31", "10.20.0.1", 26, 121, "control-plane"),
+    "k8s-w1": ("eth9", 120, "10.20.0.32", "10.20.0.1", 27, 122, "worker"),
+    "k8s-w2": ("eth10", 120, "10.20.0.33", "10.20.0.1", 28, 123, "worker"),
+}
+K8S = {"cluster": "f5lab", "version": "v1.35.8", "pods": "10.244.0.0/16", "services": "10.96.0.0/16", "var": "/var/lib/f5lab-k8s",
+       "cis_image": "f5networks/k8s-bigip-ctlr:2.20.4.1"}
+
+CIS = {"name": "k8s.f5lab.test", "vip": "10.20.30.120", "unit": "lb-f5a", "user": "cis", "partition": "f5lab_k8s", "namespace": "web",
+       "version": "2.20.4.1"}
 
 def openapi(version="1.0.0"):
     """The API's OpenAPI 3.0.3 description (shared/openapi-f5lab-api.json): the positive-security model for part 17.
@@ -150,7 +162,7 @@ def esi_ports(pair):
     if pair == "service":
         return [(FW_PORT, FW_PO, None, [t[0] for t in TRANSITS], FW)]
     if pair == "server":
-        return [(v[0], v[4], v[1], [], n) for n, v in APP_HOSTS.items()]
+        return [(v[0], v[4], v[1], [], n) for n, v in list(APP_HOSTS.items()) + list(K8S_NODES.items())]
     return [(LAN_SWITCH[1], LAN_SWITCH[3], LAN_SWITCH[4], [], LAN_SWITCH[0])]
 
 
@@ -305,7 +317,7 @@ def links():
         L += [(sa, v[0], u, "eth1", "f5"), (sb, v[0], u, "eth2", "f5")]
     L.append(("lb-f5a", F5_HA_PORT, "lb-f5b", F5_HA_PORT, "f5-ha"))
     va, vb = PAIRS["server"][0]
-    for n, v in APP_HOSTS.items():
+    for n, v in list(APP_HOSTS.items()) + list(K8S_NODES.items()):
         L += [(va, v[0], n, "eth1", "esi"), (vb, v[0], n, "eth2", "esi")]
     ba, bb = PAIRS["border"][0]
     sw, port = LAN_SWITCH[0], LAN_SWITCH[1]
@@ -358,6 +370,11 @@ def clab():
         y += host(n, m, "lan", [("IP", ip + "/24"), ("GW", "10.10.0.1"), ("TZ", "Etc/UTC")], "pc-up.sh", IMG_PC,
                   binds=["%s/tls/ca.crt:/run/f5lab/ca.crt:ro" % SECRETS], env_files=["%s/pc.env" % SECRETS], shm="1gb",
                   ports=["127.0.0.1:%d:%d" % (hp, cp) for hp, cp in zip(PC_PUBLISH[n], PC_WEB_PORTS)])
+    for n, (_p, _vl, ip, gw, _po, m, _r) in K8S_NODES.items():
+        y += ["    %s:" % n, "      kind: linux", "      image: %s" % IMG_K8S, "      mgmt-ipv4: %s.%d" % (MGMT, m), "      group: k8s",
+              "      binds:", "        - shared:/shared:ro", "        - %s/%s:/var" % (K8S["var"], n),
+              "      env:", '        container: "docker"', '        IP: "%s/24"' % ip, '        GW: "%s"' % gw,
+              "      exec:", "        - bash /shared/k8s-node-net.sh"]
     y.append("  links:")
     for a, ap, b, bp, _k in links():
         y.append('    - endpoints: ["%s:%s", "%s:%s"]' % (a, ap, b, bp))
@@ -368,7 +385,7 @@ def mgmt_hosts():
     rows = [(SWITCH_MGMT[n], n, "fabric") for n in SPINES + LEAVES] + [(FW_MGMT, FW, "firewall")]
     rows += [(v[1], u, "load-balancers") for u, v in F5.items()]
     rows += [(v[5], n, "servers" if v[6] == IMG_WEB else "tools") for n, v in APP_HOSTS.items()] + [(LAN_SWITCH[4], LAN_SWITCH[0], "lan")]
-    rows += [(v[2], n, "lan") for n, v in PCS.items()]
+    rows += [(v[2], n, "lan") for n, v in PCS.items()] + [(v[5], n, "k8s") for n, v in K8S_NODES.items()]
     return "".join("%s.%d %s %s\n" % (MGMT, o, n, g) for o, n, g in sorted(rows))
 
 
@@ -386,7 +403,24 @@ if __name__ == "__main__":
         % (GSLB["zone"], GSLB["wideip"], GSLB["resolver"][0], GSLB["resolver"][1])
         + "".join("SITE_%s=\"%s %s %s %s\"\n" % (u.replace("-", "_").upper(), *v) for u, v in GSLB["sites"].items())
         + "GSLB_LISTENERS=\"%s\"\n" % " ".join(v[3] for v in GSLB["sites"].values()))
+    open("shared/cis-values.sh", "w").write("# generated by gen.py (CIS): part 22\nCIS_NAME=%s\nCIS_VIP=%s\nCIS_UNIT=%s\nCIS_USER=%s\nCIS_PARTITION=%s\nCIS_NAMESPACE=%s\nCIS_VERSION=%s\n" % (CIS["name"], CIS["vip"], CIS["unit"], CIS["user"], CIS["partition"], CIS["namespace"], CIS["version"]))
     open("shared/as3-values.sh", "w").write("# generated by gen.py (AS3): part 21\nAS3_NAME=%s\nAS3_VIP=%s\nAS3_TENANT=%s\nAS3_VERSION=%s\n" % (AS3["name"], AS3["vip"], AS3["tenant"], AS3["version"]))
+    open("shared/k8s-values.sh", "w").write("# generated by gen.py (K8S): parts 22-24\nK8S_IMAGE=%s\nK8S_VERSION=%s\nK8S_CLUSTER=%s\nK8S_PODS=%s\nK8S_SERVICES=%s\nK8S_VAR=%s\nCIS_IMAGE=%s\nK8S_NODES=\"%s\"\n"
+        % (IMG_K8S, K8S["version"], K8S["cluster"], K8S["pods"], K8S["services"], K8S["var"], K8S["cis_image"], " ".join(K8S_NODES))
+        + "".join("NODE_%s=\"%s %s %s\"\n" % (n.replace("-", "_").upper(), v[2], v[6], "%s.%d" % (MGMT, v[5])) for n, v in K8S_NODES.items()))
+    cp = [n for n, v in K8S_NODES.items() if v[6] == "control-plane"][0]; cpip = K8S_NODES[cp][2]; cpm = "%s.%d" % (MGMT, K8S_NODES[cp][5])
+    open("k8s/kubeadm.yaml", "w").write(
+        "# generated by gen.py (K8S): kubeadm init on %s. Node IPs are the fabric addresses (bond0, VLAN 120).\n"
+        "apiVersion: kubeadm.k8s.io/v1beta4\nkind: InitConfiguration\nlocalAPIEndpoint: {advertiseAddress: %s, bindPort: 6443}\n"
+        "nodeRegistration:\n  criSocket: unix:///run/containerd/containerd.sock\n  kubeletExtraArgs: [{name: node-ip, value: \"%s\"}]\n---\n"
+        "apiVersion: kubeadm.k8s.io/v1beta4\nkind: ClusterConfiguration\nkubernetesVersion: %s\nclusterName: %s\ncontrolPlaneEndpoint: %s:6443\n"
+        "apiServer: {certSANs: [\"%s\", \"%s\", \"%s\"]}\nnetworking: {podSubnet: %s, serviceSubnet: %s}\n---\n"
+        "# the node is a container: systemd cgroups, no swap check, no disk-pressure eviction (the lab server's disk is shared)\n"
+        "apiVersion: kubelet.config.k8s.io/v1beta1\nkind: KubeletConfiguration\ncgroupDriver: systemd\nfailSwapOn: false\nimageGCHighThresholdPercent: 100\n"
+        "evictionHard: {nodefs.available: \"0%%\", nodefs.inodesFree: \"0%%\", imagefs.available: \"0%%\"}\n---\n"
+        "# the node container cannot change the host's conntrack table size\n"
+        "apiVersion: kubeproxy.config.k8s.io/v1alpha1\nkind: KubeProxyConfiguration\nconntrack: {maxPerCore: 0}\n"
+        % (cp, cpip, cpip, K8S["version"], K8S["cluster"], cpip, cpip, cpm, cp, K8S["pods"], K8S["services"]))
     open("shared/anycast-values.sh", "w").write("# generated by gen.py (ANYCAST): part 20\nANY_NAME=%s\nANY_VIP=%s\n" % (ANYCAST["name"], ANYCAST["vip"]))
     open("shared/api-values.sh", "w").write("# generated by gen.py (API): part 17's test API\nAPI_NAME=%s\nAPI_VIP=%s\nAPI_PORT=%d\nAPI_BASE=%s\n"
                                          % (API["name"], API["vip"], API["port"], API["base"]))
@@ -394,4 +428,4 @@ if __name__ == "__main__":
     open("shared/openapi-f5lab-api-v1.1.json", "w").write(json.dumps(openapi("1.1.0"), indent=2) + "\n")
     open("images.txt", "w").write("".join("%s %s\n" % kv for kv in BUILD_IMAGES.items()))
     print("gen.py: %d switches, %d links, %d hosts, %d switch configs, fw-pa.xml" % (len(SPINES + LEAVES), len(links()),
-          len(APP_HOSTS) + 1 + len(PCS), len(SPINES + LEAVES)))
+          len(APP_HOSTS) + 1 + len(PCS) + len(K8S_NODES), len(SPINES + LEAVES)))

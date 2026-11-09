@@ -24,6 +24,10 @@ say "hosts reach their anycast gateway"
 for h in server1 server2 server3 log-server; do chk "$h > 10.20.0.1" X $h "ping -c2 -W2 10.20.0.1"; done
 chk "sorry-server > 10.20.30.1" X sorry-server "ping -c2 -W2 10.20.30.1"
 for h in pc1 pc2 pc3; do chk "$h > 10.10.0.1" X $h "ping -c2 -W2 10.10.0.1"; done
+# the kindest/node image has no ping: a routed fetch (VLAN 120 > the anycast gateway > the sorry-server in VLAN 130) proves the same
+for h in $(. shared/k8s-values.sh; echo $K8S_NODES); do chk "$h > 10.20.0.1 > sorry-server http (routed)" X $h "curl -sf --max-time 5 -o /dev/null http://10.20.30.30/"; done
+say "kubernetes: every node Ready"
+n=$(kc get nodes --no-headers 2>/dev/null | awk '$2=="Ready"' | wc -l); [ "$n" -eq 3 ] && ok "$n nodes Ready" || ko "$n nodes Ready (want 3)"
 say "through the firewall: users reach the published range only"
 chk "pc1 > sorry-server http (10.20.30.30:80, through fw-pa)" X pc1 "curl -sf --max-time 5 http://10.20.30.30/"
 chk "pc1 > sorry-server https with the lab CA" X pc1 "curl -sf --max-time 5 --cacert /run/f5lab/ca.crt --resolve sorry.f5lab.test:443:10.20.30.30 https://sorry.f5lab.test/"

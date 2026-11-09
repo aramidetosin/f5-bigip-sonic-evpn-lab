@@ -9,6 +9,7 @@ if [ -r "$SECRETS/appliances.env" ]; then set -a; . "$SECRETS/appliances.env"; s
 else echo "lib.sh: $SECRETS/appliances.env is missing or unreadable (run ./secrets-init.sh as root)" >&2; fi
 mip() { awk -v n="$1" '$2==n{print $1}' mgmt-hosts.txt; }                       # management address of a node
 X() { docker exec $C-$1 sh -c "$2" 2>&1; }                                       # run in a linux node
+kc() { docker exec -i $C-k8s-cp kubectl --kubeconfig /etc/kubernetes/admin.conf "$@"; }   # kubectl on the lab cluster
 SSHO="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 # sshpass -e reads SSHPASS from the environment: the password never appears in a process list
 SW() { SSHPASS="$SONIC_PW" sshpass -e ssh $SSHO -o ConnectTimeout=10 "${SONIC_USER:-admin}"@"$(mip $1)" "$2" </dev/null; }
@@ -22,4 +23,4 @@ say() { echo "[$(date +%H:%M:%S)] $*"; }
 F5_UNITS="lb-f5a lb-f5b"
 f5pw() { sed -n 's/^PASSWORD=//p' "$SECRETS/$1.env"; }
 f5rest() { local u=$1 m=$2 p=$3; shift 3
-  printf 'user = "admin:%s"\n' "$(f5pw $u)" | curl -sk --max-time 60 -K - -X "$m" "https://$(mip $u)$p" "$@"; }
+  printf 'user = "admin:%s"\n' "$(f5pw $u)" | curl -sk --max-time ${F5_TIMEOUT:-60} -K - -X "$m" "https://$(mip $u)$p" "$@"; }

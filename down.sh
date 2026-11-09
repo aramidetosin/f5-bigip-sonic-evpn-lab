@@ -10,7 +10,7 @@ cd "$(dirname "$0")"; . ./lib.sh
 if [ "${1:-}" != --licences-revoked ]; then
   for u in $F5_UNITS; do
     l=$(f5rest $u GET /mgmt/tm/sys/license | grep -o '"registrationKey":"[^"]*"' | head -1)
-    [ -n "$l" ] && { say "refusing: $u still holds a licence. Revoke it (web UI: System > License > Revoke), then ./down.sh --licences-revoked"; exit 1; }
+    [ -n "$l" ] && { say "refusing: $u still holds a licence. Revoke it (./f5-revoke.sh, or web UI: System > License > Revoke), then ./down.sh --licences-revoked"; exit 1; }
   done
 fi
 containerlab destroy -t $TOPO > logs/down.txt 2>&1 && say "lab removed (both BIG-IP configs saved as UCS archives)"

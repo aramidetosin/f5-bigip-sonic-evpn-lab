@@ -14,7 +14,8 @@ VRFs, the servers, and the users' view. It ends with two blank, unlicensed BIG-I
 
 ## Starting state
 
-- `./up.sh` has finished on the lab server and its last line is `validate: 36 PASS, 0 FAIL`.
+- `./up.sh` has finished on the lab server and its last line is `validate: 36 PASS, 0 FAIL`. A lab built from today's repo also has
+  the three Kubernetes nodes added for part 22 (k8s-cp, k8s-w1, k8s-w2): 23 nodes and `validate: 40 PASS, 0 FAIL`. This part does not use them.
 - Both BIG-IPs (lb-f5a, lb-f5b) are blank and unlicensed. Only their management interface answers (SSH and web UI).
 - Nothing from an earlier part is needed.
 
@@ -52,7 +53,7 @@ are plain Linux containers.
 containerlab inspect -t f5-clos-dc.clab.yml --format csv | cut -d, -f4,6,8,10 | column -s, -t
 ```
 
-You should see all 20 nodes running, each with its management address. (I ran it with containerlab 0.82; plain
+You should see all 20 nodes running (23 with the Kubernetes nodes), each with its management address. (I ran it with containerlab 0.82; plain
 `containerlab inspect -t f5-clos-dc.clab.yml` shows the same in a table.)
 
 ### 2. The underlay: eBGP unnumbered on spine1

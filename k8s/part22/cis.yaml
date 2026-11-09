@@ -1,0 +1,38 @@
+# Part 22: F5 Container Ingress Services 2.20.4.1, one controller for the cluster.
+#   It watches the namespace web for VirtualServer resources (CRD mode) and turns them into an AS3 declaration for the
+#   partition f5lab_k8s on lb-f5a (management address), logging in as the BIG-IP user cis (credentials: the Secret bigip-login).
+#   Pool members are NodePort: every node address with the Service's node port.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-bigip-ctlr
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: k8s-bigip-ctlr}
+  template:
+    metadata:
+      labels: {app: k8s-bigip-ctlr}
+    spec:
+      serviceAccountName: bigip-ctlr
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000}
+      containers:
+        - name: k8s-bigip-ctlr
+          image: f5networks/k8s-bigip-ctlr:2.20.4.1
+          imagePullPolicy: Never
+          command: [/app/bin/k8s-bigip-ctlr]
+          args:
+            - --bigip-url=https://172.21.32.43
+            - --bigip-partition=f5lab_k8s
+            - --credentials-directory=/tmp/creds
+            - --custom-resource-mode=true
+            - --namespace=web
+            - --pool-member-type=nodeport
+            - --insecure=true
+            - --log-level=INFO
+          volumeMounts:
+            - {name: bigip-creds, mountPath: /tmp/creds, readOnly: true}
+      volumes:
+        - name: bigip-creds
+          secret: {secretName: bigip-login, defaultMode: 0440}

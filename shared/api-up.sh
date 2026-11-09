@@ -37,4 +37,5 @@ server {
 }
 EOF
 nginx -t -q
-pgrep -x nginx >/dev/null && nginx -s reload || nginx
+nginx -s reload 2>/dev/null || nginx   # reload a running nginx (pgrep -x misses it: nginx rewrites its process title), else start it
+for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; netstat -ltn 2>/dev/null | grep -q "$ADDR:$API_PORT " && break; nginx -s reload 2>/dev/null || nginx; done

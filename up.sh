@@ -17,7 +17,7 @@ say "0 preflight"
 for t in containerlab docker sshpass python3 openssl nft curl; do command -v $t >/dev/null || bad "$t missing"; done
 python3 -B gen.py || bad "gen.py"
 . ./lib.sh 2>/dev/null
-for i in vrnetlab/dell_sonic:4.6.0 vrnetlab/paloalto_pa-vm:12.1.2 vrnetlab/f5_bigip-ve:17.5.1.11-0.0.12; do
+for i in vrnetlab/dell_sonic:4.6.0 vrnetlab/paloalto_pa-vm:12.1.2 vrnetlab/f5_bigip-ve:17.5.1.11-0.0.12 $(. shared/k8s-values.sh; echo $K8S_IMAGE); do
   docker image inspect $i >/dev/null 2>&1 || bad "image $i missing (build it with vrnetlab)"; done
 while read img dir; do docker image inspect $img >/dev/null 2>&1 && continue
   say "building $img from $dir"; docker build --network host -q -t $img $dir >/dev/null || bad "build $img"; done < images.txt
@@ -34,12 +34,14 @@ for u in $F5_UNITS; do docker inspect $C-$u >/dev/null 2>&1 && [ "${1:-}" != --c
 [ $FAIL = 0 ] || { say "preflight failed"; exit 1; }
 [ "${1:-}" = --check ] && { ./mgmt-access.sh --check; say "preflight OK (--check: not deploying)"; exit 0; }
 mkdir -p logs
+say "1a kubernetes node /var"; ./k8s-seed.sh || exit 1
 say "1 deploy (--reconfigure)"
 containerlab deploy -t $TOPO --reconfigure > logs/deploy.txt 2>&1 || { tail -20 logs/deploy.txt; exit 1; }
 say "2 management access"; ./mgmt-access.sh > logs/mgmt-access.txt 2>&1   # the detail goes to the log; the screen shows a summary
 grep -E "ACTION|WARNING|not installed" logs/mgmt-access.txt; say "management access ready (masquerade, subnet route, LAN route)"
 say "3 switch configs"; ./sonic-apply.sh | tee logs/apply.txt
 say "4 firewall"; ./pa-load.sh | tee logs/pa-load.txt
+say "4b kubernetes"; ./k8s-up.sh | tee logs/k8s-up.txt
 say "5 BIG-IP management (no configuration)"
 for u in $F5_UNITS; do
   for i in $(seq 1 90); do

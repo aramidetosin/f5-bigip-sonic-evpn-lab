@@ -6,7 +6,7 @@ UNITS=("$@"); [ $# -eq 0 ] && UNITS=($F5_UNITS)
 OUT=$SECRETS/ucs; umask 077; mkdir -p $OUT; TS=$(date +%Y%m%d-%H%M%S); RC=0
 for u in "${UNITS[@]}"; do
   n="$u-$TS"
-  r=$(f5rest $u POST /mgmt/tm/sys/ucs -H 'Content-Type: application/json' -d "{\"command\":\"save\",\"name\":\"$n\"}")
+  r=$(F5_TIMEOUT=900 f5rest $u POST /mgmt/tm/sys/ucs -H 'Content-Type: application/json' -d "{\"command\":\"save\",\"name\":\"$n\"}")
   echo "$r" | grep -q "\"name\":\"$n\"" || { say "$u: save FAILED: $(echo "$r" | head -c 200)"; RC=1; continue; }
   # download in 1 MiB chunks (the file-transfer endpoint needs Content-Range)
   f=$OUT/$n.ucs; : > $f; start=0; total=-1

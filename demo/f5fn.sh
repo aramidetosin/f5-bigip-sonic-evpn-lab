@@ -39,3 +39,5 @@ f5merge() { ssh admin@clab-f5-clos-dc-${F5U:-lb-f5a} "cat > /var/tmp/merge.conf 
 #                         so a BIG-IP can fetch the OpenAPI file a declarative policy links to
 wafimport() { ssh admin@clab-f5-clos-dc-${WAFU:-lb-f5a} "cat > /var/tmp/waf-import.json" < "$1" && waf import /var/tmp/waf-import.json; }
 oapiserve() { (timeout ${1:-180} python3 -m http.server 8099 --bind 172.21.32.1 -d "$(cd "$(dirname "${BASH_SOURCE[0]}")/../shared" && pwd)" >/tmp/oapi-http.log 2>&1 &); sleep 1; echo "serving lab/shared on http://172.21.32.1:8099 for ${1:-180} s"; }
+node()    { docker exec -i clab-f5-clos-dc-$1 "${@:2}"; }
+kubectl() { docker exec -i clab-f5-clos-dc-k8s-cp kubectl --kubeconfig /etc/kubernetes/admin.conf "$@"; }

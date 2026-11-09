@@ -1,0 +1,23 @@
+# Part 22: the application published through the BIG-IP: one CIS VirtualServer.
+#   CIS builds a virtual server on 10.20.30.120:80 in partition f5lab_k8s, a pool from the Service whoami (NodePort members),
+#   an HTTP monitor on /health, and SNAT automap (the BIG-IP is not the nodes' gateway).
+apiVersion: cis.f5.com/v1
+kind: VirtualServer
+metadata:
+  name: whoami
+  namespace: web
+  labels: {f5cr: "true"}   # CIS only picks up custom resources with this label
+spec:
+  host: k8s.f5lab.test
+  virtualServerAddress: 10.20.30.120
+  snat: auto
+  pools:
+    - path: /
+      service: whoami
+      servicePort: 80
+      monitor:
+        type: http
+        send: "GET /health HTTP/1.1\r\nHost: k8s.f5lab.test\r\nConnection: close\r\n\r\n"
+        recv: "OK"
+        interval: 5
+        timeout: 16

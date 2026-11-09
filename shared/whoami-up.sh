@@ -54,5 +54,5 @@ $LINES
 }
 EOF
 nginx -t -q
-pgrep -x nginx >/dev/null && nginx -s reload || nginx
+nginx -s reload 2>/dev/null || nginx   # reload a running nginx (pgrep -x misses it: nginx rewrites its process title), else start it
 [ "$ROLE" = sorry ] || bash /shared/api-up.sh

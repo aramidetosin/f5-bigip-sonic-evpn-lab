@@ -38,6 +38,14 @@ My host is an EVE-NG server used as a plain containerlab host (96 CPUs, 377 GiB 
 
 The four small Linux images (`scd/host:1`, `f5lab/web:1`, `f5lab/tools:1`, `f5lab/pc:1`) are built by `up.sh` from `images/`.
 
+**Two public images** for the Kubernetes cluster (parts 22-24), pulled once on the host (the nodes have no internet access;
+`k8s-up.sh` copies the images they need into each node):
+
+```bash
+docker pull kindest/node:v1.35.8                    # the three Kubernetes nodes (up.sh refuses to start without it)
+docker pull f5networks/k8s-bigip-ctlr:2.20.4.1      # F5 CIS, part 22 on
+```
+
 **Licences you bring.** No licence key is in this repo and none is applied by the scripts.
 - BIG-IP: your own registration keys, one per unit. **LTM** covers parts 2-15. Parts 16-17 need **Advanced WAF** on the same key.
   Parts 18-19 need **BIG-IP DNS**. An evaluation key that bundles all three covers the whole series. Part 2 shows activation in the
@@ -135,16 +143,18 @@ It runs these stages and logs the detail to `logs/` (ignored by git):
 | Stage | What |
 |---|---|
 | 0 preflight | root, tools, images (builds the four Linux images from `images/`), free management subnet, RAM, `gen.py`, secrets |
+| 1a Kubernetes `/var` | `k8s-seed.sh`: a fresh `/var` for each Kubernetes node in a host directory (`/var/lib/f5lab-k8s/<node>`), copied from the kindest/node image (containerd's snapshots fail on the container's own overlay root) |
 | 1 deploy | `containerlab deploy --reconfigure` (refused while a BIG-IP of this lab is running: `./down.sh` first) |
 | 2 access | `mgmt-access.sh`: masquerade the management subnet out of `LAN_IF`; optionally add it to the host's Tailscale routes |
 | 3 switches | `sonic-apply.sh`: `configs/<switch>.cli` on all eight switches |
 | 4 firewall | `pa-load.sh`: `bootstrap/fw-pa.xml` (import, partial replace, commit) |
+| 4b Kubernetes | `k8s-up.sh`: kubeadm on k8s-cp with `k8s/kubeadm.yaml` (generated), the kindnet CNI, the workers joined with their fabric address as node IP, `f5lab/web:1` and CIS loaded into every node |
 | 5 BIG-IP | waits until both management interfaces answer HTTPS and SSH; nothing else is configured on them |
-| 5b SSH keys | `ssh-keys.sh`: passwordless SSH as `admin` from the host to all 20 nodes |
+| 5b SSH keys | `ssh-keys.sh`: passwordless SSH as `admin` from the host to the 20 non-Kubernetes nodes (the Kubernetes nodes: `docker exec`) |
 | 6 validate | `validate.sh` |
 
-In my builds it takes about 11 minutes (each SONiC switch needs about 6 minutes to report "Startup complete"; the PA-VM about
-8 minutes). It ends with `validate: 36 PASS, 0 FAIL`.
+In my last build it took about 13 minutes (each SONiC switch needs about 6 minutes to report "Startup complete"; the PA-VM about
+8 minutes; the Kubernetes cluster about 70 s). It ends with `validate: 40 PASS, 0 FAIL`.
 
 ## 6. Validate
 
@@ -186,9 +196,11 @@ From the lab host, every node answers passwordless SSH as `admin` (`ssh-keys.sh`
 | sorry-server | .105 | 10.20.30.30 | the red maintenance page |
 | lan-switch | .110 | 10.10.0.5 | the client LAN bridge (and, from part 18, the clients' DNS resolver) |
 | pc1-3 | .111-.113 | 10.10.0.11-13 | Firefox in a web desktop: `https://<mgmt>:3001`, login from `pc.env` |
+| k8s-cp, k8s-w1, k8s-w2 | .121-.123 | 10.20.0.31-33 | the Kubernetes nodes (part 22 on): `docker exec -it clab-f5-clos-dc-k8s-cp bash`; kubectl on k8s-cp with `--kubeconfig /etc/kubernetes/admin.conf` (`kubectl` in `demo/f5fn.sh`) |
 
-The PCs resolve `app.f5lab.test` (10.20.30.100), `api.f5lab.test` (10.20.30.101, part 17) and `sorry.f5lab.test` (10.20.30.30), and
-trust the lab CA. On the BIG-IP's bash, `ip` is an older version: use `ip addr`, not `ip -br addr`.
+The PCs resolve `app.f5lab.test` (10.20.30.100), `api.f5lab.test` (10.20.30.101, part 17), `any.f5lab.test` (10.20.5.200, part 20),
+`as3.f5lab.test` (10.20.30.110, part 21), `k8s.f5lab.test` (10.20.30.120, part 22) and `sorry.f5lab.test` (10.20.30.30), and trust
+the lab CA. On the BIG-IP's bash, `ip` is an older version: use `ip addr`, not `ip -br addr`.
 
 To reach the management network from another machine, either route `172.21.32.0/24` via the lab host, or let `mgmt-access.sh`
 advertise it on Tailscale (approve the subnet route once in your Tailscale admin console). The PCs also publish their desktops on the
@@ -225,7 +237,8 @@ also run a small JSON API on port 8080 (`shared/api-up.sh`).
 BIG-IP restarts its REST API during the load, so a 502 on the way is expected.
 
 **Revoke before you destroy.** An evaluation key still bound to a deleted VM is lost. Revoke in each web UI (System > License > Revoke)
-or in tmsh (`revoke sys license`). `down.sh` saves both configurations first, then refuses while a BIG-IP still reports a licence,
+or in tmsh (`revoke sys license`), or with `./f5-revoke.sh` (from part 14 on a unit's data-plane default route also carries its own
+traffic, so the licence server is not reachable; the script adds temporary management routes, revokes, removes them and checks). `down.sh` saves both configurations first, then refuses while a BIG-IP still reports a licence,
 unless you pass `--licences-revoked`. Don't run `containerlab destroy` directly: it skips both steps.
 
 A typical session: `./up.sh` > license both BIG-IPs > `./f5-restore.sh` both units > work through a part > `./f5-save.sh` > revoke >
@@ -237,9 +250,9 @@ A typical session: `./up.sh` > license both BIG-IPs > `./f5-restore.sh` both uni
 |---|---|
 | Fabric | 2 spines (AS 65000) and three leaf pairs: `leaf1a/b-service` (AS 65001: firewall and BIG-IPs), `leaf2a/b-server` (AS 65002), `leaf3a/b-border` (AS 65003). eBGP unnumbered underlay, BGP EVPN, VXLAN, symmetric IRB with anycast gateways |
 | VRFs | **Vrf-Outside** (L3VNI 50001): VLAN 110, users 10.10.0.0/24. **Vrf-App** (L3VNI 50002): VLAN 120, servers 10.20.0.0/24; VLAN 130, BIG-IP external 10.20.30.0/24. L2VNI = 10000 + VLAN |
-| Multihoming | every dual-homed host (firewall, servers, log and sorry servers, LAN switch) on an ESI-LAG with LACP across its leaf pair. The BIG-IPs are single-homed: 1.1 to leaf1a-service, 1.2 to leaf1b-service, 1.3 to 1.3 for HA |
+| Multihoming | every dual-homed host (firewall, servers, log and sorry servers, Kubernetes nodes, LAN switch) on an ESI-LAG with LACP across its leaf pair. The BIG-IPs are single-homed: 1.1 to leaf1a-service, 1.2 to leaf1b-service, 1.3 to 1.3 for HA |
 | Firewall | fw-pa (AS 65500) is the only path between the two VRFs: ae1 to the service pair, transit VLANs 3001 (Outside) and 3002 (App), eBGP in both. Users may reach only 10.20.30.0/24 and the 10.20.5.0/24 host routes, on tcp/80, 443, ping, and DNS (from part 18). Default deny with logging, no NAT |
 | BIG-IP ports | the same cables serve two designs. **Basic** (parts 2-13): 1.1 = VLAN 130 untagged, 1.2 = VLAN 120 untagged, VIPs in 10.20.30.0/24. **Advanced** (part 14 on): the same ports also carry tagged transits 3005 / 3007, eBGP from AS 65020 to both service leaves, VIP /32s in 10.20.5.0/24. The switches and firewall are configured for both; the BIG-IP configuration decides which one is live |
-| Additions | a JSON test API with its OpenAPI file (part 17); a DNS resolver on lan-switch delegating `gslb.f5lab.test` to the BIG-IP DNS listeners (parts 18-19) |
+| Additions | a JSON test API with its OpenAPI file (part 17); a DNS resolver on lan-switch delegating `gslb.f5lab.test` to the BIG-IP DNS listeners (parts 18-19); a three-node Kubernetes cluster on the server leaves, VLAN 120, 10.20.0.31-33 (kubeadm, kindnet; parts 22-24) |
 
 Next: [Part 1, the lab layer by layer](parts/part01.md), then [Part 2](parts/part02.md) to license the BIG-IPs.
