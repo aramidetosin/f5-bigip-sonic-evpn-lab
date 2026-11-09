@@ -41,3 +41,7 @@ wafimport() { ssh admin@clab-f5-clos-dc-${WAFU:-lb-f5a} "cat > /var/tmp/waf-impo
 oapiserve() { (timeout ${1:-180} python3 -m http.server 8099 --bind 172.21.32.1 -d "$(cd "$(dirname "${BASH_SOURCE[0]}")/../shared" && pwd)" >/tmp/oapi-http.log 2>&1 &); sleep 1; echo "serving lab/shared on http://172.21.32.1:8099 for ${1:-180} s"; }
 node()    { docker exec -i clab-f5-clos-dc-$1 "${@:2}"; }
 kubectl() { docker exec -i clab-f5-clos-dc-k8s-cp kubectl --kubeconfig /etc/kubernetes/admin.conf "$@"; }
+aistream() {
+  local c="curl -sN '$1' | while IFS= read -r l; do [ -n \"\$l\" ] && echo \"\$(date +%T.%N | cut -c1-12)  \$l\"; done"
+  if [ "${2:-pc1}" = pc1 ]; then pc1 "$c"; else node "$2" sh -c "$c"; fi
+}

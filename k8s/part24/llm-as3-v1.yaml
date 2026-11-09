@@ -1,0 +1,55 @@
+# Part 24: the AI front door, version 1: round robin, no connection limit, no slow ramp (connectionLimit 0 = none).
+#   An AS3 declaration in a ConfigMap, read by the second CIS (cis-ai.yaml); members filled from the Service llm (labels).
+#   ai.f5lab.test = 10.20.30.130:80; tcp idle timeout 300 s for long streams; HTTP monitor on /health.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-as3
+  namespace: ai
+  labels:
+    f5type: virtual-server
+    as3: "true"
+data:
+  template: |
+    {
+      "class": "AS3",
+      "action": "deploy",
+      "persist": true,
+      "declaration": {
+        "class": "ADC",
+        "schemaVersion": "3.56.0",
+        "id": "f5lab-ai-front-door",
+        "f5lab_ai": {
+          "class": "Tenant",
+          "ai": {
+            "class": "Application",
+            "template": "http",
+            "serviceMain": {
+              "class": "Service_HTTP",
+              "virtualAddresses": ["10.20.30.130"],
+              "virtualPort": 80,
+              "pool": "llm_pool",
+              "snat": "auto",
+              "profileTCP": {"use": "tcp_stream"},
+              "persistenceMethods": []
+            },
+            "tcp_stream": {"class": "TCP_Profile", "idleTimeout": 300},
+            "llm_pool": {
+              "class": "Pool",
+              "loadBalancingMode": "round-robin",
+              "slowRampTime": 0,
+              "monitors": [{"use": "llm_health"}],
+              "members": [{"servicePort": 8080, "serverAddresses": [], "shareNodes": true, "connectionLimit": 0}]
+            },
+            "llm_health": {
+              "class": "Monitor",
+              "monitorType": "http",
+              "send": "GET /health HTTP/1.1\r\nHost: ai.f5lab.test\r\nConnection: close\r\n\r\n",
+              "receive": "OK",
+              "interval": 5,
+              "timeout": 16
+            }
+          }
+        }
+      }
+    }

@@ -1,0 +1,45 @@
+# Part 24: one more inference pod, on a smaller (older) GPU: ONE slot instead of four, so every extra concurrent stream on it
+# slows all of its streams down. Same app label, so the Service llm (and the BIG-IP pool) includes it with the others.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-small
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: llm, gpu: small}
+  template:
+    metadata:
+      labels: {app: llm, gpu: small}
+    spec:
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: llm
+          image: f5lab/web:1
+          imagePullPolicy: Never
+          ports: [{containerPort: 8080}]
+          env:
+            - {name: POD_NAME, valueFrom: {fieldRef: {fieldPath: metadata.name}}}
+            - {name: SLOTS, value: "1"}
+            - {name: TOKEN_MS, value: "100"}
+            - {name: PREFILL_MS, value: "400"}
+            - {name: WARMUP, value: "60"}
+          command: [sh, -c]
+          args:
+            - |
+              date +%s > /tmp/started; mkdir -p /srv/cgi-bin /tmp/active; echo OK > /srv/health
+              cp /cgi/generate /cgi/stats /srv/cgi-bin/; chmod 755 /srv/cgi-bin/*
+              exec busybox-extras httpd -f -p 8080 -h /srv
+          volumeMounts:
+            - {name: cgi, mountPath: /cgi}
+          readinessProbe:
+            httpGet: {path: /health, port: 8080}
+            periodSeconds: 5
+          lifecycle:
+            preStop:
+              # an inference pod being removed finishes the streams it has: wait until none is active (at most 100 s)
+              exec: {command: [sh, -c, "for i in $(seq 100); do [ -z \"$(ls /tmp/active)\" ] && break; sleep 1; done"]}
+      volumes:
+        - name: cgi
+          configMap: {name: llm-cgi}

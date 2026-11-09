@@ -1,0 +1,96 @@
+# Part 24: a stand-in for an LLM inference service, as pods. It streams "tokens" as Server-Sent Events like an inference API:
+#   GET /cgi-bin/generate?tokens=N  > first token after a prefill delay, then one token per interval, then [DONE]
+#   each pod has SLOTS "GPU slots": with more active streams than slots, every stream on that pod slows down (time-sliced)
+#   a new pod is "cold" for WARMUP seconds after start: its tokens come 3x slower (model weights still loading into cache)
+#   GET /cgi-bin/stats  > this pod's active streams;  GET /health > OK
+# No new image: f5lab/web:1's busybox httpd runs the CGI scripts below. Nothing here is a real model.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-cgi
+  namespace: ai
+data:
+  generate: |
+    #!/bin/sh
+    # one stream; the active-stream count is the number of files in /tmp/active
+    export PATH=/usr/sbin:/usr/bin:/sbin:/bin   # httpd gives CGI a minimal PATH (no awk)
+    mkdir -p /tmp/active; me=/tmp/active/$$; touch $me; trap 'rm -f $me' EXIT INT TERM PIPE HUP
+    n=$(echo "$QUERY_STRING" | sed -n 's/.*tokens=\([0-9]*\).*/\1/p'); n=${n:-40}
+    up=$(( $(date +%s) - $(cat /tmp/started) )); cold=1; [ $up -lt ${WARMUP:-0} ] && cold=3
+    echo "Content-Type: text/event-stream"; echo "Cache-Control: no-cache"; echo
+    sleep $(awk "BEGIN{print ${PREFILL_MS:-400} * $cold / 1000}")
+    i=1
+    while [ $i -le $n ]; do
+      a=$(ls /tmp/active | wc -l); share=$(( (a + ${SLOTS:-4} - 1) / ${SLOTS:-4} ))
+      echo "data: {\"pod\":\"$POD_NAME\",\"token\":$i,\"active\":$a}"; echo
+      sleep $(awk "BEGIN{print ${TOKEN_MS:-100} * $share * $cold / 1000}"); i=$((i + 1))
+    done
+    echo "data: [DONE] $POD_NAME $n tokens"; echo
+  stats: |
+    #!/bin/sh
+    echo "Content-Type: text/plain"; echo
+    echo "$POD_NAME active $(ls /tmp/active 2>/dev/null | wc -l)"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm
+  namespace: ai
+spec:
+  replicas: 3
+  selector:
+    matchLabels: {app: llm, gpu: big}
+  template:
+    metadata:
+      labels: {app: llm, gpu: big}
+    spec:
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: llm
+          image: f5lab/web:1
+          imagePullPolicy: Never
+          ports: [{containerPort: 8080}]
+          env:
+            - {name: POD_NAME, valueFrom: {fieldRef: {fieldPath: metadata.name}}}
+            - {name: SLOTS, value: "4"}
+            - {name: TOKEN_MS, value: "100"}
+            - {name: PREFILL_MS, value: "400"}
+            - {name: WARMUP, value: "60"}
+          command: [sh, -c]
+          args:
+            - |
+              date +%s > /tmp/started; mkdir -p /srv/cgi-bin /tmp/active; echo OK > /srv/health
+              cp /cgi/generate /cgi/stats /srv/cgi-bin/; chmod 755 /srv/cgi-bin/*
+              exec busybox-extras httpd -f -p 8080 -h /srv
+          volumeMounts:
+            - {name: cgi, mountPath: /cgi}
+          readinessProbe:
+            httpGet: {path: /health, port: 8080}
+            periodSeconds: 5
+          lifecycle:
+            preStop:
+              # an inference pod being removed finishes the streams it has: wait until none is active (at most 100 s)
+              exec: {command: [sh, -c, "for i in $(seq 100); do [ -z \"$(ls /tmp/active)\" ] && break; sleep 1; done"]}
+      volumes:
+        - name: cgi
+          configMap: {name: llm-cgi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm
+  namespace: ai
+  labels:
+    # for CIS in AS3 ConfigMap mode: these endpoints fill the pool f5lab_ai/ai/llm_pool
+    cis.f5.com/as3-tenant: f5lab_ai
+    cis.f5.com/as3-app: ai
+    cis.f5.com/as3-pool: llm_pool
+spec:
+  selector: {app: llm}
+  ports:
+    - {name: http, port: 8080, targetPort: 8080}

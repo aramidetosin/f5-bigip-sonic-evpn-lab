@@ -18,6 +18,7 @@ shared/gslb-values.sh
 shared/openapi-f5lab-api*.json
 shared/anycast-values.sh
 shared/as3-values.sh
+shared/ai-values.sh
 shared/cis-values.sh
 shared/k8s-values.sh
 k8s/kubeadm.yaml

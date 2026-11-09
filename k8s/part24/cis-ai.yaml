@@ -1,0 +1,40 @@
+# Part 24: a SECOND CIS controller, in AS3 ConfigMap mode, for the namespace ai only.
+#   Without --custom-resource-mode, CIS reads ConfigMaps labelled f5type: virtual-server + as3: "true", each holding a whole AS3
+#   declaration; for every pool it finds a Service labelled cis.f5.com/as3-tenant / as3-app / as3-pool and fills that pool's members
+#   with the Service's ready endpoints (--pool-member-type=cluster: pod IP:port). Everything else in the declaration is plain AS3,
+#   so pool settings the VirtualServer resource cannot express (per-member connection limits, slow ramp) are available.
+#   --bigip-partition is CIS's OWN partition and may not be a ConfigMap tenant (CIS refuses it): f5lab_ai_cis here, tenant f5lab_ai
+#   in the declaration. Same BIG-IP user and Secret as the first CIS; the routes to the pod networks already come from the first CIS (part 23).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-bigip-ctlr-ai
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: k8s-bigip-ctlr-ai}
+  template:
+    metadata:
+      labels: {app: k8s-bigip-ctlr-ai}
+    spec:
+      serviceAccountName: bigip-ctlr
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000}
+      containers:
+        - name: k8s-bigip-ctlr
+          image: f5networks/k8s-bigip-ctlr:2.20.4.1
+          imagePullPolicy: Never
+          command: [/app/bin/k8s-bigip-ctlr]
+          args:
+            - --bigip-url=https://172.21.32.43
+            - --bigip-partition=f5lab_ai_cis
+            - --credentials-directory=/tmp/creds
+            - --namespace=ai
+            - --pool-member-type=cluster
+            - --insecure=true
+            - --log-level=INFO
+          volumeMounts:
+            - {name: bigip-creds, mountPath: /tmp/creds, readOnly: true}
+      volumes:
+        - name: bigip-creds
+          secret: {secretName: bigip-login, defaultMode: 0440}
